@@ -13,6 +13,21 @@ import (
 	"github.com/aws/aws-sdk-go-v2/service/ec2"
 )
 
+func getInstanceName(instanceID string, client *ec2.Client) (string, error) {
+	output, err := client.DescribeInstances(context.TODO(), &ec2.DescribeInstancesInput{
+		InstanceIds: []string{instanceID},
+	})
+	if err != nil {
+		return "", err
+	}
+
+	if len(output.Reservations) > 0 && len(output.Reservations[0].Instances) > 0 {
+		return *output.Reservations[0].Instances[0].Tags[0].Value, nil
+	}
+
+	return "", nil
+}
+
 func listRegions(profiles []string) {
 	for _, profile := range profiles {
 		cfg, err := config.LoadDefaultConfig(context.TODO(),
@@ -49,6 +64,7 @@ func isPortOpen(ip string, port int, timeout int) bool {
 }
 
 func checkRegion(region string, profile string, port int, timeout int, wg *sync.WaitGroup) {
+
 	defer wg.Done()
 
 	if len(region) <= 0 {
@@ -81,10 +97,19 @@ func checkRegion(region string, profile string, port int, timeout int, wg *sync.
 		for _, reservation := range output.Reservations {
 			for _, instance := range reservation.Instances {
 				if instance.State.Name == "running" {
+
 					if isPortOpen(*instance.PublicIpAddress, port, timeout) {
 						time := strings.Split(instance.LaunchTime.String(), " ")
 						date := time[0]
-						fmt.Printf("%s %s %s %s %s\n", *instance.PublicIpAddress, *instance.InstanceId, date, region, profile)
+						name, err := getInstanceName(*instance.InstanceId, client)
+						if err != nil {
+							panic("failed to get instance name")
+						}
+
+						// fmt.Printf("%s %s %s %s %s %s \n", *instance.PublicIpAddress, *instance.InstanceId, date, region, profile, name)
+						output := fmt.Sprintf("%-15s %-15s %-15s %-15s %-15s %-15s", *instance.PublicIpAddress, *instance.InstanceId, date, region, profile, name)
+						fmt.Println(output)
+
 					}
 				}
 			}
@@ -105,7 +130,7 @@ func main() {
 
 	// Define flags
 	flag.StringVar(&profiles, "a", "5233,8055,4511stage", "List of profiles")
-	flag.StringVar(&regions, "r", "ap-south-1,eu-north-1,eu-west-3,eu-west-2,eu-west-1,ap-northeast-3,ap-northeast-2,ap-northeast-1,ca-central-1,sa-east-1,us-east-1,us-east-2,us-west-1,us-west-2", "List of regions")
+	flag.StringVar(&regions, "r", "ap-south-1,eu-north-1,eu-west-3", "List of regions")
 	flag.IntVar(&port, "p", 22, "Port number")
 	flag.IntVar(&timeout, "t", 500, "Timeout in milliseconds")
 
