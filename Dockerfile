@@ -17,7 +17,7 @@ COPY . .
 RUN CGO_ENABLED=0 GOOS=linux go build -ldflags="-s -w" -o aws-ec2-port-scanner
 
 # Use a minimal base image for the final image
-FROM scratch
+FROM alpine:latest
 
 # Copy the built binary from the builder stage
 COPY --from=builder /app/aws-ec2-port-scanner /app/

@@ -13,6 +13,31 @@ import (
 	"github.com/aws/aws-sdk-go-v2/service/ec2"
 )
 
+func listRegions(profiles []string) {
+	for _, profile := range profiles {
+		cfg, err := config.LoadDefaultConfig(context.TODO(),
+			config.WithSharedConfigProfile(profile),
+		)
+		if err != nil {
+			panic("failed to load AWS configuration")
+		}
+
+		client := ec2.NewFromConfig(cfg)
+
+		output, err := client.DescribeRegions(context.TODO(), &ec2.DescribeRegionsInput{})
+		if err != nil {
+			panic("failed to describe regions")
+		}
+
+		regionList := make([]string, 0)
+		for _, region := range output.Regions {
+			regionList = append(regionList, *region.RegionName)
+		}
+
+		fmt.Printf("Profile: %s\nRegions: %s\n\n", profile, strings.Join(regionList, ", "))
+	}
+}
+
 func isPortOpen(ip string, port int, timeout int) bool {
 	address := fmt.Sprintf("%s:%d", ip, port)
 	conn, err := net.DialTimeout("tcp", address, time.Duration(timeout)*time.Millisecond)
@@ -105,4 +130,7 @@ func main() {
 	}
 
 	wg.Wait()
+
+	// list all regions in each profile
+	// listRegions(profileList)
 }
