@@ -5,12 +5,12 @@ This is a command-line tool written in Go to scan the status of TCP ports on AWS
 ## Prerequisites
 
 - Go 1.16 or later
-- AWS CLI installed and configured with the necessary credentials and profiles
+- AWS ./aws/credentials profiles configured with credentials
 
 ## Installation
 
 1. Clone the repository:
-```git clone https://github.com/your-username/aws-ec2-port-scanner.git```
+```git clone https://github.com/jessegersensonchess/aws-ec2-port-scanner.git```
 
 2. Change to the project directory:
 ```cd aws-ec2-port-scanner``
