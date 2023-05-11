@@ -13,51 +13,17 @@ import (
 	"github.com/aws/aws-sdk-go-v2/service/ec2"
 )
 
-func getSecurityGroupNames(instanceID string, client *ec2.Client) ([]string, error) {
-	output, err := client.DescribeInstances(context.TODO(), &ec2.DescribeInstancesInput{
-		InstanceIds: []string{instanceID},
-	})
-	if err != nil {
-		return nil, err
-	}
-
-	if len(output.Reservations) > 0 && len(output.Reservations[0].Instances) > 0 {
-		var securityGroupNames []string
-		for _, sg := range output.Reservations[0].Instances[0].SecurityGroups {
-			securityGroupNames = append(securityGroupNames, *sg.GroupName)
-		}
-		return securityGroupNames, nil
-	}
-
-	return nil, nil
+type InstanceInfo struct {
+	PublicIP       string
+	InstanceID     string
+	Date           string
+	Region         string
+	Profile        string
+	Name           string
+	SecurityGroups []string
 }
 
-func getInstanceName(instanceID string, client *ec2.Client) (string, error) {
-	output, err := client.DescribeInstances(context.TODO(), &ec2.DescribeInstancesInput{
-		InstanceIds: []string{instanceID},
-	})
-	if err != nil {
-		return "", err
-	}
-
-	if len(output.Reservations) > 0 && len(output.Reservations[0].Instances) > 0 {
-		return *output.Reservations[0].Instances[0].Tags[0].Value, nil
-	}
-
-	return "", nil
-}
-
-func isPortOpen(ip string, port int, timeout int) bool {
-	address := fmt.Sprintf("%s:%d", ip, port)
-	conn, err := net.DialTimeout("tcp", address, time.Duration(timeout)*time.Millisecond)
-	if err != nil {
-		return false
-	}
-	defer conn.Close()
-	return true
-}
-
-func checkRegion(region string, profile string, port int, timeout int, wg *sync.WaitGroup) {
+func checkRegion(region string, profile string, port int, timeout int, wg *sync.WaitGroup, resultChan chan<- InstanceInfo) {
 	defer wg.Done()
 
 	if len(region) <= 0 {
@@ -104,11 +70,19 @@ func checkRegion(region string, profile string, port int, timeout int, wg *sync.
 							panic("failed to get security group names")
 						}
 
-						securityGroups := strings.Join(securityGroupNames, ", ")
-						// fmt.Printf("%s %s %s %s %s %s \n", *instance.PublicIpAddress, *instance.InstanceId, date, region, profile, name)
-						output := fmt.Sprintf("%-15s %-15s %-15s %-15s %-15s %-15s (%s)", *instance.PublicIpAddress, *instance.InstanceId, date, region, profile, name, securityGroups)
-						fmt.Println(output)
+						//						securityGroups := strings.Join(securityGroupNames, ", ")
 
+						instanceInfo := InstanceInfo{
+							PublicIP:       *instance.PublicIpAddress,
+							InstanceID:     *instance.InstanceId,
+							Date:           date,
+							Region:         region,
+							Profile:        profile,
+							Name:           name,
+							SecurityGroups: securityGroupNames,
+						}
+
+						resultChan <- instanceInfo
 					}
 				}
 			}
@@ -121,6 +95,50 @@ func checkRegion(region string, profile string, port int, timeout int, wg *sync.
 	}
 }
 
+func getSecurityGroupNames(instanceID string, client *ec2.Client) ([]string, error) {
+	output, err := client.DescribeInstances(context.TODO(), &ec2.DescribeInstancesInput{
+		InstanceIds: []string{instanceID},
+	})
+	if err != nil {
+		return nil, err
+	}
+
+	if len(output.Reservations) > 0 && len(output.Reservations[0].Instances) > 0 {
+		var securityGroupNames []string
+		for _, sg := range output.Reservations[0].Instances[0].SecurityGroups {
+			securityGroupNames = append(securityGroupNames, *sg.GroupName)
+		}
+		return securityGroupNames, nil
+	}
+
+	return nil, nil
+}
+
+func getInstanceName(instanceID string, client *ec2.Client) (string, error) {
+	output, err := client.DescribeInstances(context.TODO(), &ec2.DescribeInstancesInput{
+		InstanceIds: []string{instanceID},
+	})
+	if err != nil {
+		return "", err
+	}
+
+	if len(output.Reservations) > 0 && len(output.Reservations[0].Instances) > 0 {
+		return *output.Reservations[0].Instances[0].Tags[0].Value, nil
+	}
+
+	return "", nil
+}
+
+func isPortOpen(ip string, port int, timeout int) bool {
+	address := fmt.Sprintf("%s:%d", ip, port)
+	conn, err := net.DialTimeout("tcp", address, time.Duration(timeout)*time.Millisecond)
+	if err != nil {
+		return false
+	}
+	defer conn.Close()
+	return true
+}
+
 func main() {
 	var profiles string
 	var regions string
@@ -131,7 +149,7 @@ func main() {
 	flag.StringVar(&profiles, "a", "5233,8055,4511stage", "List of profiles")
 	flag.StringVar(&regions, "r", "ap-south-1,eu-north-1,eu-west-3,eu-west-2,eu-west-1,ap-northeast-3,ap-northeast-2,ap-northeast-1,ca-central-1,sa-east-1,ap-southeast-1,ap-southeast-2,eu-central-1,us-east-1,us-east-2,us-west-1,us-west-2", "List of regions")
 	flag.IntVar(&port, "p", 22, "Port number")
-	flag.IntVar(&timeout, "t", 600, "Timeout in milliseconds")
+	flag.IntVar(&timeout, "t", 500, "Timeout in milliseconds")
 
 	flag.Parse()
 
@@ -144,14 +162,25 @@ func main() {
 	regionList := strings.Split(regions, ",")
 
 	var wg sync.WaitGroup
+	resultChan := make(chan InstanceInfo)
 
-	fmt.Println("ip, id, created, region, profile")
+	fmt.Println("ip, id, created, region, profile, security groups")
+
 	for _, profile := range profileList {
 		for _, region := range regionList {
 			wg.Add(1)
-			go checkRegion(region, profile, port, timeout, &wg)
+			go checkRegion(region, profile, port, timeout, &wg, resultChan)
 		}
 	}
 
-	wg.Wait()
+	go func() {
+		wg.Wait()
+		close(resultChan)
+	}()
+
+	for instanceInfo := range resultChan {
+		output := fmt.Sprintf("%-15s %-15s %-15s %-15s %-15s %-15s (%s)",
+			instanceInfo.PublicIP, instanceInfo.InstanceID, instanceInfo.Date, instanceInfo.Region, instanceInfo.Profile, instanceInfo.Name, strings.Join(instanceInfo.SecurityGroups, ", "))
+		fmt.Println(output)
+	}
 }
