@@ -13,6 +13,25 @@ import (
 	"github.com/aws/aws-sdk-go-v2/service/ec2"
 )
 
+func getSecurityGroupNames(instanceID string, client *ec2.Client) ([]string, error) {
+	output, err := client.DescribeInstances(context.TODO(), &ec2.DescribeInstancesInput{
+		InstanceIds: []string{instanceID},
+	})
+	if err != nil {
+		return nil, err
+	}
+
+	if len(output.Reservations) > 0 && len(output.Reservations[0].Instances) > 0 {
+		var securityGroupNames []string
+		for _, sg := range output.Reservations[0].Instances[0].SecurityGroups {
+			securityGroupNames = append(securityGroupNames, *sg.GroupName)
+		}
+		return securityGroupNames, nil
+	}
+
+	return nil, nil
+}
+
 func getInstanceName(instanceID string, client *ec2.Client) (string, error) {
 	output, err := client.DescribeInstances(context.TODO(), &ec2.DescribeInstancesInput{
 		InstanceIds: []string{instanceID},
@@ -28,31 +47,6 @@ func getInstanceName(instanceID string, client *ec2.Client) (string, error) {
 	return "", nil
 }
 
-func listRegions(profiles []string) {
-	for _, profile := range profiles {
-		cfg, err := config.LoadDefaultConfig(context.TODO(),
-			config.WithSharedConfigProfile(profile),
-		)
-		if err != nil {
-			panic("failed to load AWS configuration")
-		}
-
-		client := ec2.NewFromConfig(cfg)
-
-		output, err := client.DescribeRegions(context.TODO(), &ec2.DescribeRegionsInput{})
-		if err != nil {
-			panic("failed to describe regions")
-		}
-
-		regionList := make([]string, 0)
-		for _, region := range output.Regions {
-			regionList = append(regionList, *region.RegionName)
-		}
-
-		fmt.Printf("Profile: %s\nRegions: %s\n\n", profile, strings.Join(regionList, ", "))
-	}
-}
-
 func isPortOpen(ip string, port int, timeout int) bool {
 	address := fmt.Sprintf("%s:%d", ip, port)
 	conn, err := net.DialTimeout("tcp", address, time.Duration(timeout)*time.Millisecond)
@@ -64,7 +58,6 @@ func isPortOpen(ip string, port int, timeout int) bool {
 }
 
 func checkRegion(region string, profile string, port int, timeout int, wg *sync.WaitGroup) {
-
 	defer wg.Done()
 
 	if len(region) <= 0 {
@@ -106,8 +99,14 @@ func checkRegion(region string, profile string, port int, timeout int, wg *sync.
 							panic("failed to get instance name")
 						}
 
+						securityGroupNames, err := getSecurityGroupNames(*instance.InstanceId, client)
+						if err != nil {
+							panic("failed to get security group names")
+						}
+
+						securityGroups := strings.Join(securityGroupNames, ", ")
 						// fmt.Printf("%s %s %s %s %s %s \n", *instance.PublicIpAddress, *instance.InstanceId, date, region, profile, name)
-						output := fmt.Sprintf("%-15s %-15s %-15s %-15s %-15s %-15s", *instance.PublicIpAddress, *instance.InstanceId, date, region, profile, name)
+						output := fmt.Sprintf("%-15s %-15s %-15s %-15s %-15s %-15s (%s)", *instance.PublicIpAddress, *instance.InstanceId, date, region, profile, name, securityGroups)
 						fmt.Println(output)
 
 					}
@@ -155,7 +154,4 @@ func main() {
 	}
 
 	wg.Wait()
-
-	// list all regions in each profile
-	// listRegions(profileList)
 }
