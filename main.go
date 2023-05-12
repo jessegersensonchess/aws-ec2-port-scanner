@@ -53,39 +53,58 @@ func checkRegion(region string, profile string, port int, timeout int, wg *sync.
 			panic("failed to describe instances")
 		}
 
+		mychan := make(chan InstanceInfo)
+		var wgInstances sync.WaitGroup
+
 		for _, reservation := range output.Reservations {
 			for _, instance := range reservation.Instances {
 				if instance.State.Name == "running" {
+					wgInstances.Add(1)
 
-					if isPortOpen(*instance.PublicIpAddress, port, timeout) {
-						time := strings.Split(instance.LaunchTime.String(), " ")
-						date := time[0]
-						name, err := getInstanceName(*instance.InstanceId, client)
-						if err != nil {
-							panic("failed to get instance name")
+					// check all IPs concurrently
+					go func() {
+						defer wgInstances.Done()
+
+						ip := *instance.PublicIpAddress
+						if isPortOpen(ip, port, timeout) == true {
+							time := strings.Split(instance.LaunchTime.String(), " ")
+							date := time[0]
+							name, err := getInstanceName(*instance.InstanceId, client)
+							if err != nil {
+								panic("failed to get instance name")
+							}
+
+							securityGroupNames, err := getSecurityGroupNames(*instance.InstanceId, client)
+							if err != nil {
+								panic("failed to get security group names")
+							}
+
+							instanceInfo := InstanceInfo{
+								PublicIP:       *instance.PublicIpAddress,
+								InstanceID:     *instance.InstanceId,
+								Date:           date,
+								Region:         region,
+								Profile:        profile,
+								Name:           name,
+								SecurityGroups: securityGroupNames,
+							}
+
+							mychan <- instanceInfo
 						}
 
-						securityGroupNames, err := getSecurityGroupNames(*instance.InstanceId, client)
-						if err != nil {
-							panic("failed to get security group names")
-						}
+					}()
 
-						//						securityGroups := strings.Join(securityGroupNames, ", ")
-
-						instanceInfo := InstanceInfo{
-							PublicIP:       *instance.PublicIpAddress,
-							InstanceID:     *instance.InstanceId,
-							Date:           date,
-							Region:         region,
-							Profile:        profile,
-							Name:           name,
-							SecurityGroups: securityGroupNames,
-						}
-
-						resultChan <- instanceInfo
-					}
 				}
 			}
+		}
+
+		go func() {
+			wgInstances.Wait()
+			close(mychan)
+		}()
+
+		for instanceInfo := range mychan {
+			resultChan <- instanceInfo
 		}
 
 		if output.NextToken == nil {
@@ -152,10 +171,6 @@ func main() {
 	flag.IntVar(&timeout, "t", 500, "Timeout in milliseconds")
 
 	flag.Parse()
-
-	// Replace ", " with "," to remove spaces in the input
-	profiles = strings.ReplaceAll(profiles, ", ", ",")
-	regions = strings.ReplaceAll(regions, ", ", ",")
 
 	// Split profiles and regions into slices
 	profileList := strings.Split(profiles, ",")
