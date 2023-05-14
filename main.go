@@ -156,7 +156,6 @@ func getInstanceName(instanceID string, client *ec2.Client) (string, error) {
 }
 
 func isPortOpen(ip string, port int, timeout int) bool {
-	start := time.Now()
 	address := fmt.Sprintf("%s:%d", ip, port)
 	resultChan := make(chan bool)
 
@@ -172,10 +171,8 @@ func isPortOpen(ip string, port int, timeout int) bool {
 
 	select {
 	case result := <-resultChan:
-		fmt.Println(time.Since(start))
 		return result
 	case <-time.After(time.Duration(timeout) * time.Millisecond):
-		fmt.Println(time.Since(start))
 		return false
 	}
 }
