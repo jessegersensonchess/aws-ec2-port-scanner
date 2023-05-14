@@ -50,7 +50,13 @@ func checkRegion(region string, profile string, port int, timeout int, wg *sync.
 			NextToken:  nextToken,
 		})
 		if err != nil {
+			return
 			panic("failed to describe instances")
+		}
+
+		if len(output.Reservations) == 0 {
+			// No instances found in the region, return early
+			return
 		}
 
 		mychan := make(chan InstanceInfo)
@@ -71,6 +77,7 @@ func checkRegion(region string, profile string, port int, timeout int, wg *sync.
 							date := time[0]
 							name, err := getInstanceName(*instance.InstanceId, client)
 							if err != nil {
+								name = "no name"
 								panic("failed to get instance name")
 							}
 
@@ -149,13 +156,28 @@ func getInstanceName(instanceID string, client *ec2.Client) (string, error) {
 }
 
 func isPortOpen(ip string, port int, timeout int) bool {
+	start := time.Now()
 	address := fmt.Sprintf("%s:%d", ip, port)
-	conn, err := net.DialTimeout("tcp", address, time.Duration(timeout)*time.Millisecond)
-	if err != nil {
+	resultChan := make(chan bool)
+
+	go func() {
+		conn, err := net.DialTimeout("tcp", address, time.Duration(timeout)*time.Millisecond)
+		if err != nil {
+			resultChan <- false
+			return
+		}
+		defer conn.Close()
+		resultChan <- true
+	}()
+
+	select {
+	case result := <-resultChan:
+		fmt.Println(time.Since(start))
+		return result
+	case <-time.After(time.Duration(timeout) * time.Millisecond):
+		fmt.Println(time.Since(start))
 		return false
 	}
-	defer conn.Close()
-	return true
 }
 
 func main() {
@@ -192,7 +214,6 @@ func main() {
 		wg.Wait()
 		close(resultChan)
 	}()
-
 	for instanceInfo := range resultChan {
 		output := fmt.Sprintf("%-15s %-15s %-15s %-15s %-15s %-15s (%s)",
 			instanceInfo.PublicIP, instanceInfo.InstanceID, instanceInfo.Date, instanceInfo.Region, instanceInfo.Profile, instanceInfo.Name, strings.Join(instanceInfo.SecurityGroups, ", "))
