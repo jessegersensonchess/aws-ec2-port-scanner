@@ -168,7 +168,7 @@ func main() {
 	flag.StringVar(&profiles, "a", "5233,8055,4511stage", "List of profiles")
 	flag.StringVar(&regions, "r", "ap-south-1,eu-north-1,eu-west-3,eu-west-2,eu-west-1,ap-northeast-3,ap-northeast-2,ap-northeast-1,ca-central-1,sa-east-1,ap-southeast-1,ap-southeast-2,eu-central-1,us-east-1,us-east-2,us-west-1,us-west-2", "List of regions")
 	flag.IntVar(&port, "p", 22, "Port number")
-	flag.IntVar(&timeout, "t", 500, "Timeout in milliseconds")
+	flag.IntVar(&timeout, "t", 1000, "Timeout in milliseconds")
 
 	flag.Parse()
 
