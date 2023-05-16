@@ -4,14 +4,11 @@ FROM golang:1.19-alpine as builder
 # Set the working directory
 WORKDIR /app
 
-# Copy the Go module files
-COPY go.mod go.sum ./
+# Copy the Go module files and app source code
+COPY . .
 
 # Download the dependencies
 RUN go mod download
-
-# Copy the application source code
-COPY . .
 
 # Build the application
 RUN CGO_ENABLED=0 GOOS=linux go build -ldflags="-s -w" -o aws-ec2-port-scanner
@@ -27,4 +24,3 @@ WORKDIR /app
 
 # Run the application
 ENTRYPOINT ["./aws-ec2-port-scanner"]
-
