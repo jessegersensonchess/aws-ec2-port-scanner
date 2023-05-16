@@ -75,8 +75,8 @@ func checkRegion(region string, profile string, port int, timeout int, wg *sync.
 					go func(instanceId string, publicIpAddress string, launchTime string) {
 						defer wgInstances.Done()
 
-						//if isPortOpen(*instance.PublicIpAddress, port, timeout) {
-						if isPortOpen(publicIpAddress, port, timeout) {
+						if isPortOpen(*instance.PublicIpAddress, port, timeout) {
+						//if isPortOpen(publicIpAddress, port, timeout) {
 							time := strings.Split(launchTime, " ")
 							date := time[0]
 							name, err := getInstanceName(instanceId, client)
