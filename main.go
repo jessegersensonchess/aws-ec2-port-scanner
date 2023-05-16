@@ -50,8 +50,8 @@ func checkRegion(region string, profile string, port int, timeout int, wg *sync.
 			NextToken:  nextToken,
 		})
 		if err != nil {
+			fmt.Println("ERROR: failed to describe instances")
 			return
-			panic("failed to describe instances")
 		}
 
 		if len(output.Reservations) == 0 {
@@ -67,28 +67,32 @@ func checkRegion(region string, profile string, port int, timeout int, wg *sync.
 				if instance.State.Name == "running" {
 					wgInstances.Add(1)
 
+					instanceId := *instance.InstanceId
+					publicIpAddress := *instance.PublicIpAddress
+					launchTime := instance.LaunchTime.String()
+
 					// check all IPs concurrently
-					go func() {
+					go func(instanceId string, publicIpAddress string, launchTime string) {
 						defer wgInstances.Done()
 
-						ip := *instance.PublicIpAddress
-						if isPortOpen(ip, port, timeout) == true {
-							time := strings.Split(instance.LaunchTime.String(), " ")
+						//if isPortOpen(*instance.PublicIpAddress, port, timeout) {
+						if isPortOpen(publicIpAddress, port, timeout) {
+							time := strings.Split(launchTime, " ")
 							date := time[0]
-							name, err := getInstanceName(*instance.InstanceId, client)
+							name, err := getInstanceName(instanceId, client)
 							if err != nil {
 								name = "no name"
 								panic("failed to get instance name")
 							}
 
-							securityGroupNames, err := getSecurityGroupNames(*instance.InstanceId, client)
+							securityGroupNames, err := getSecurityGroupNames(instanceId, client)
 							if err != nil {
 								panic("failed to get security group names")
 							}
 
 							instanceInfo := InstanceInfo{
-								PublicIP:       *instance.PublicIpAddress,
-								InstanceID:     *instance.InstanceId,
+								PublicIP:       publicIpAddress,
+								InstanceID:     instanceId,
 								Date:           date,
 								Region:         region,
 								Profile:        profile,
@@ -99,7 +103,7 @@ func checkRegion(region string, profile string, port int, timeout int, wg *sync.
 							mychan <- instanceInfo
 						}
 
-					}()
+					}(instanceId, publicIpAddress, launchTime)
 
 				}
 			}
@@ -148,7 +152,7 @@ func getInstanceName(instanceID string, client *ec2.Client) (string, error) {
 		return "", err
 	}
 
-	if len(output.Reservations) > 0 && len(output.Reservations[0].Instances) > 0 {
+	if len(output.Reservations) > 0 && len(output.Reservations[0].Instances) > 0 && len(output.Reservations[0].Instances[0].Tags) > 0 {
 		return *output.Reservations[0].Instances[0].Tags[0].Value, nil
 	}
 
