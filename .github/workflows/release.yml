@@ -9,8 +9,23 @@ on:
 #  pull_request:
 #    branches: [ "master" ]
   workflow_dispatch:
-
+          
 jobs:
+  linter:
+    runs-on: ubuntu-latest
+    name: run golangci-lint
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v3
+
+      - name: install linter 
+        run: |
+          date -u
+          curl -sSfL https://raw.githubusercontent.com/golangci/golangci-lint/master/install.sh | sh -s -- -b /usr/local/bin
+          golangci-lint run -v
+          date -u
+          echo "ran for $SECONDS seconds"
+
   build:
     runs-on: ubuntu-latest
     steps:
